@@ -11,6 +11,7 @@ CONFIG = {
 
 class Linter(BaseLinter):
     GJSLINT_RE = re.compile(r'Line (?P<line>\d+),\s*E:(?P<errnum>\d+):\s*(?P<message>.+)')
+    JSIOHINT_RE = re.compile(r'[^:]+: line (?P<lineno>\d+),\s*col (?P<col>\d+), (?P<message>.+)')
 
     def __init__(self, config):
         super(Linter, self).__init__(config)
@@ -21,6 +22,14 @@ class Linter(BaseLinter):
 
         if (self.linter in ('jshint', 'jslint')):
             return self.get_javascript_engine(view)
+        elif (self.linter == 'jsiohint'):
+            try:
+                path = "/usr/local/share/npm/bin/jsiohint"
+                self.input_method = INPUT_METHOD_TEMP_FILE
+                subresult = subprocess.call([path, u'--help'], startupinfo=self.get_startupinfo())
+                return (True, path, 'using jsiohint')
+            except OSError:
+                return (False, '', 'jsiohint cannot be found')
         elif (self.linter == 'gjslint'):
             try:
                 path = self.get_mapped_executable(view, 'gjslint')
@@ -39,6 +48,8 @@ class Linter(BaseLinter):
             args.extend(gjslint_options)
             args.extend([u'--nobeep', filename])
             return args
+        elif (self.linter == 'jsiohint'):
+            return [filename]
         elif (self.linter in ('jshint', 'jslint')):
             return self.get_javascript_args(view, self.linter, code)
         else:
@@ -64,6 +75,16 @@ class Linter(BaseLinter):
 
                     if (int(errnum) not in ignore):
                         self.add_message(int(line), lines, message, errorMessages)
+
+        elif (self.linter == 'jsiohint'):
+            for line in errors.splitlines():
+                match = self.JSIOHINT_RE.match(line)
+
+                if match:
+                    lineno, col, message = int(match.group('lineno')), int(match.group('col')) - 1, match.group('message')
+
+                    self.add_message(lineno, lines, message, errorMessages)
+                    self.underline_range(view, lineno, col, errorUnderlines)
 
         elif (self.linter in ('jshint', 'jslint')):
             try:
